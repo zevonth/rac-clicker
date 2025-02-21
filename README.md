@@ -2,8 +2,8 @@
 Short for Robust Auto Click for CraftRise
 
 
-You can contact with me in discord: giveitashot_44 
-Benimle discord üzerinden iletişime geçmek için: giveitashot_44
+- You can contact with me in discord: **giveitashot_44**
+- Benimle discord üzerinden iletişime geçmek için: **giveitashot_44**
 
 # RAC Usage Example
 
