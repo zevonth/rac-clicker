@@ -217,7 +217,7 @@ impl Menu {
 
         println!("=== Current Settings ===");
         println!("Toggle Hotkey: {}", Self::get_key_name(self.toggle_key));
-
+        /*
         if let Ok(license_validator) = LicenseValidator::new(Vec::from(XOR_KEY), Vec::from(PROTECTED_PUBLIC), Vec::from(PROTECTED_ENCRYPTION)) {
             println!("Machine ID: {}", license_validator.get_current_machine_id());
 
@@ -242,6 +242,7 @@ impl Menu {
                 Err(e) => println!("Could not read license info: {}", e),
             }
         }
+        */
     }
 
     fn start_auto_clicker(&self) {
