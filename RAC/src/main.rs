@@ -143,10 +143,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     match initialize_services() {
         Ok(()) => {
             let click_service = WindowsClickService::new();
-            let license_validator = LicenseValidator::new(Vec::from(XOR_KEY), Vec::from(PROTECTED_PUBLIC), Vec::from(PROTECTED_ENCRYPTION))?;
-            let license_checker = LicenseChecker::new(license_validator);
+            //let license_validator = LicenseValidator::new(Vec::from(XOR_KEY), Vec::from(PROTECTED_PUBLIC), Vec::from(PROTECTED_ENCRYPTION))?;
+            //let license_checker = LicenseChecker::new(license_validator);
 
-            license_checker.start_checking().await;
+            //license_checker.start_checking().await;
 
             let mut menu = Menu::new(click_service);
             menu.show_main_menu();
