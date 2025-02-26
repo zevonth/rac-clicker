@@ -12,11 +12,11 @@ pub struct SystemRequirements {
 impl Default for SystemRequirements {
     fn default() -> Self {
         let context = "SystemRequirements::default";
-        let god_dir = dirs::data_local_dir().unwrap().join("RAC");
-        let logs_path = god_dir.join("logs.txt");
+        let rac_dir = dirs::data_local_dir().unwrap().join("RAC");
+        let logs_path = rac_dir.join("logs.txt");
 
-        if !god_dir.exists() {
-            if let Err(e) = std::fs::create_dir_all(&god_dir) {
+        if !rac_dir.exists() {
+            if let Err(e) = std::fs::create_dir_all(&rac_dir) {
                 log_error(&format!("Failed to create RAC directory: {}", e), context);
             }
         }
@@ -29,7 +29,7 @@ impl Default for SystemRequirements {
 
         Self {
             minimum_windows_version: 10,
-            required_directories: vec![god_dir],
+            required_directories: vec![rac_dir],
         }
     }
 }
