@@ -1,6 +1,6 @@
 use crate::logger::logger::{log_error, log_info};
-use rand::Rng;
 use std::time::Duration;
+use std::sync::Arc;
 
 pub struct DelayProvider {
     delay_buffer: Vec<Duration>,
@@ -29,24 +29,23 @@ impl DelayProvider {
 
     fn initialize_delay_buffer(&mut self) -> Result<(), String> {
         let mut rng = rand::rng();
+
         for delay in self.delay_buffer.iter_mut() {
-            let ms = rng.random_range(68.5..=69.5);
-            *delay = Duration::from_micros((ms * 1000.0) as u64);
+            let ms = rand::Rng::random_range(&mut rng, 68.0..=73.0);
+
+            let micro_adjust: i32 = rand::Rng::random_range(&mut rng, -150..=150);
+            let final_delay = ms * 1000.0 + micro_adjust as f64;
+
+            *delay = Duration::from_micros(final_delay.max(50000.0) as u64);
         }
+
         Ok(())
     }
 
     #[inline(always)]
     pub fn get_next_delay(&mut self) -> Duration {
-        let mut rng = rand::rng();
-        let base_delay = self.delay_buffer[self.current_index];
+        let delay = self.delay_buffer[self.current_index];
         self.current_index = (self.current_index + 1) & 511;
-
-        let micro_adjust: i32 = rng.random_range(-50..=50);
-        if micro_adjust < 0 {
-            base_delay.saturating_sub(Duration::from_micros(-micro_adjust as u64))
-        } else {
-            base_delay.saturating_add(Duration::from_micros(micro_adjust as u64))
-        }
+        delay
     }
 }

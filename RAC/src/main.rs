@@ -10,8 +10,8 @@ use std::error::Error;
 use std::sync::Arc;
 use std::io;
 use tokio;
-use windows::core::{w, PCSTR};
-use windows::Win32::Foundation::{GetLastError, BOOL, ERROR_ALREADY_EXISTS};
+use windows::core::{w, BOOL, PCSTR};
+use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
 use windows::Win32::System::Diagnostics::Debug::{CheckRemoteDebuggerPresent, IsDebuggerPresent};
 use windows::Win32::System::Threading::{CreateMutexW, GetCurrentProcess};
 use windows::Win32::UI::WindowsAndMessaging::FindWindowA;
@@ -42,6 +42,7 @@ fn initialize_services() -> Result<(), String> {
         return Err(validation_result.message.unwrap_or_else(|| "Unknown validation error".to_string()));
     }
 
+    /*
     let license_validator = LicenseValidator::new(Vec::from(XOR_KEY), Vec::from(PROTECTED_PUBLIC), Vec::from(PROTECTED_ENCRYPTION))
         .map_err(|e| format!("License initialization error: {}", e))?;
 
@@ -58,6 +59,9 @@ fn initialize_services() -> Result<(), String> {
         Ok(false) => Err("License is invalid or expired!".to_string()),
         Err(e) => Err(format!("License validation error: {}", e)),
     }
+    */
+
+    Ok(())
 }
 
 fn check_single_instance() -> bool {
@@ -142,12 +146,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     match initialize_services() {
         Ok(()) => {
-            let click_service = WindowsClickService::new();
-            //let license_validator = LicenseValidator::new(Vec::from(XOR_KEY), Vec::from(PROTECTED_PUBLIC), Vec::from(PROTECTED_ENCRYPTION))?;
-            //let license_checker = LicenseChecker::new(license_validator);
+            let click_service = WindowsClickService::new("craftrise-x64.exe");
+            /*
+            let license_validator = LicenseValidator::new(Vec::from(XOR_KEY), Vec::from(PROTECTED_PUBLIC), Vec::from(PROTECTED_ENCRYPTION))?;
+            let license_checker = LicenseChecker::new(license_validator);
 
-            //license_checker.start_checking().await;
-
+            license_checker.start_checking().await;
+            */
             let mut menu = Menu::new(click_service);
             menu.show_main_menu();
         }

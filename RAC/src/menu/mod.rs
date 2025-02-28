@@ -84,7 +84,7 @@ impl Menu {
                     let mut _input = String::new();
                     let _ = io::stdin().read_line(&mut _input);
                 },
-                "4" => std::process::exit(0),
+                "4" => self.perform_clean_exit(),
                 _ => {
                     log_error("Invalid menu option selected", context);
                     println!("\nInvalid option! Press Enter to continue...");
@@ -93,6 +93,22 @@ impl Menu {
                 }
             }
         }
+    }
+
+    fn perform_clean_exit(&self) {
+        let context = "Menu::perform_clean_exit";
+        log_info("Performing clean exit...", context);
+
+        if self.click_service.is_enabled() {
+            log_info("Disabling active click service before exit", context);
+            self.click_service.toggle();
+
+            thread::sleep(Duration::from_millis(100));
+        }
+
+        log_info("Clean exit completed, terminating process", context);
+
+        std::process::exit(0);
     }
 
     fn configure_hotkey(&mut self) {
@@ -246,8 +262,17 @@ impl Menu {
     }
 
     fn start_auto_clicker(&self) {
+        let context = "Menu::start_auto_clicker";
+
         if self.toggle_key == 0 {
+            self.clear_console();
             println!("Please configure hotkey first!");
+            println!("\nPress Enter to continue...");
+
+            let mut _input = String::new();
+            if let Err(e) = io::stdin().read_line(&mut _input) {
+                log_error(&format!("Failed to read continue prompt: {}", e), context);
+            }
             return;
         }
 
@@ -260,63 +285,52 @@ impl Menu {
     fn run_main_loop(&self) {
         let mut last_toggle = Instant::now();
         let toggle_cooldown = Duration::from_millis(300);
-        let mut was_rmb_held = false;
-        let mut was_enabled_before_rmb = false;
-
-        let loop_sleep_duration = Duration::from_millis(10);
+        let loop_sleep_duration = Duration::from_millis(5);
+        let mut clicker_enabled = false;
 
         println!("Press Ctrl + Q to return to main menu (only works when focused on this window)");
+        println!("Toggle clicking with your toggle key, then hold Left Mouse Button to click");
         println!("Hold Right Mouse Button to temporarily pause clicking");
 
         loop {
             unsafe {
-                static mut LAST_WINDOW_CHECK: Option<Instant> = None;
-                let current_time = Instant::now();
+                let foreground_window = GetForegroundWindow();
+                let mut title = [0u8; 256];
+                let len = GetWindowTextA(foreground_window, &mut title);
+                let window_title = String::from_utf8_lossy(&title[..len as usize]);
 
-                let mut is_our_window = false;
-                if let Some(last_check) = LAST_WINDOW_CHECK {
-                    if current_time.duration_since(last_check) >= Duration::from_millis(500) {
-                        let foreground_window = GetForegroundWindow();
-                        let mut title = [0u8; 256];
-                        let len = GetWindowTextA(foreground_window, &mut title);
-                        let window_title = String::from_utf8_lossy(&title[..len as usize]);
-                        is_our_window = window_title.trim() == "RAC Menu";
-                        LAST_WINDOW_CHECK = Some(current_time);
-                    }
-                } else {
-                    LAST_WINDOW_CHECK = Some(current_time);
-                }
+                let ctrl_pressed = (GetAsyncKeyState(0x11) as u16 & 0x8000) != 0;
+                let q_pressed = (GetAsyncKeyState(0x51) as u16 & 0x8000) != 0;
 
-                if is_our_window &&
-                    (GetAsyncKeyState(0x11) as u16 & 0x8000) != 0 &&
-                    (GetAsyncKeyState(0x51) as u16 & 0x8000) != 0 {
+                if ctrl_pressed && q_pressed && window_title.contains("RAC Menu") {
                     if self.click_service.is_enabled() {
                         self.click_service.toggle();
                     }
                     return;
                 }
 
-                let rmb_pressed = (GetAsyncKeyState(0x02) as u16 & 0x8000) != 0;
+                let current_time = Instant::now();
+                let toggle_pressed = (GetAsyncKeyState(self.toggle_key) as u16 & 0x8000) != 0;
+                if toggle_pressed && current_time.duration_since(last_toggle) > toggle_cooldown {
+                    clicker_enabled = !clicker_enabled;
+                    last_toggle = current_time;
 
-                if (GetAsyncKeyState(self.toggle_key) as u16 & 0x8000) != 0 {
-                    if current_time.duration_since(last_toggle) > toggle_cooldown {
+                    if !clicker_enabled && self.click_service.is_enabled() {
                         self.click_service.toggle();
-                        last_toggle = current_time;
-                        was_enabled_before_rmb = false;
-                        was_rmb_held = false;
                     }
                 }
 
-                if rmb_pressed {
-                    if self.click_service.is_enabled() {
-                        was_enabled_before_rmb = true;
-                        self.click_service.toggle();
-                    }
-                    was_rmb_held = true;
-                } else if was_rmb_held && !self.click_service.is_enabled() && was_enabled_before_rmb {
+                let lmb_pressed = (GetAsyncKeyState(0x01) as u16 & 0x8000) != 0;
+                let rmb_pressed = (GetAsyncKeyState(0x02) as u16 & 0x8000) != 0;
+
+                let should_click = clicker_enabled && lmb_pressed && !rmb_pressed;
+
+                if should_click && !self.click_service.is_enabled() {
                     self.click_service.toggle();
-                    was_enabled_before_rmb = false;
-                    was_rmb_held = false;
+                }
+
+                else if !should_click && self.click_service.is_enabled() {
+                    self.click_service.toggle();
                 }
             }
 
@@ -339,10 +353,9 @@ impl Menu {
             0x0B => "Mouse Button 11".to_string(),
             0x0C => "Mouse Button 12".to_string(),
 
-            0x41..=0x5A => format!("Key {}", (key as u8 as char)),
+            0x41..=0x5A => format!("Key {}", key as u8 as char),
 
             _ => format!("Unknown Key (0x{:02X})", key),
         }
     }
-
 }
