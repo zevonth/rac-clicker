@@ -285,31 +285,40 @@ impl Menu {
     fn run_main_loop(&self) {
         let mut last_toggle = Instant::now();
         let toggle_cooldown = Duration::from_millis(300);
-        let loop_sleep_duration = Duration::from_millis(5);
+        let loop_sleep_duration = Duration::from_millis(10);
         let mut clicker_enabled = false;
 
         println!("Press Ctrl + Q to return to main menu (only works when focused on this window)");
         println!("Toggle clicking with your toggle key, then hold Left Mouse Button to click");
-        println!("Hold Right Mouse Button to temporarily pause clicking");
 
         loop {
             unsafe {
-                let foreground_window = GetForegroundWindow();
-                let mut title = [0u8; 256];
-                let len = GetWindowTextA(foreground_window, &mut title);
-                let window_title = String::from_utf8_lossy(&title[..len as usize]);
+                static mut LAST_WINDOW_CHECK: Option<Instant> = None;
+                let current_time = Instant::now();
 
-                let ctrl_pressed = (GetAsyncKeyState(0x11) as u16 & 0x8000) != 0;
-                let q_pressed = (GetAsyncKeyState(0x51) as u16 & 0x8000) != 0;
+                let mut is_our_window = false;
+                if let Some(last_check) = LAST_WINDOW_CHECK {
+                    if current_time.duration_since(last_check) >= Duration::from_millis(500) {
+                        let foreground_window = GetForegroundWindow();
+                        let mut title = [0u8; 256];
+                        let len = GetWindowTextA(foreground_window, &mut title);
+                        let window_title = String::from_utf8_lossy(&title[..len as usize]);
+                        is_our_window = window_title.trim() == "RAC Menu";
+                        LAST_WINDOW_CHECK = Some(current_time);
+                    }
+                } else {
+                    LAST_WINDOW_CHECK = Some(current_time);
+                }
 
-                if ctrl_pressed && q_pressed && window_title.contains("RAC Menu") {
+                if is_our_window &&
+                    (GetAsyncKeyState(0x11) as u16 & 0x8000) != 0 &&
+                    (GetAsyncKeyState(0x51) as u16 & 0x8000) != 0 {
                     if self.click_service.is_enabled() {
                         self.click_service.toggle();
                     }
                     return;
                 }
 
-                let current_time = Instant::now();
                 let toggle_pressed = (GetAsyncKeyState(self.toggle_key) as u16 & 0x8000) != 0;
                 if toggle_pressed && current_time.duration_since(last_toggle) > toggle_cooldown {
                     clicker_enabled = !clicker_enabled;
@@ -321,15 +330,11 @@ impl Menu {
                 }
 
                 let lmb_pressed = (GetAsyncKeyState(0x01) as u16 & 0x8000) != 0;
-                let rmb_pressed = (GetAsyncKeyState(0x02) as u16 & 0x8000) != 0;
 
-                let should_click = clicker_enabled && lmb_pressed && !rmb_pressed;
-
-                if should_click && !self.click_service.is_enabled() {
+                if clicker_enabled && lmb_pressed && !self.click_service.is_enabled() {
                     self.click_service.toggle();
-                }
-
-                else if !should_click && self.click_service.is_enabled() {
+                } else if (clicker_enabled && !lmb_pressed && self.click_service.is_enabled()) ||
+                    (!clicker_enabled && self.click_service.is_enabled()) {
                     self.click_service.toggle();
                 }
             }
