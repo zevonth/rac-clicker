@@ -42,7 +42,7 @@ impl DelayProvider {
         let base_delay = self.delay_buffer[self.current_index];
         self.current_index = (self.current_index + 1) & 511;
 
-        let micro_adjust: i32 = rng.random_range(-70..=70);
+        let micro_adjust: i32 = rng.random_range(-70..=80);
         if micro_adjust < 0 {
             base_delay.saturating_sub(Duration::from_micros(-micro_adjust as u64))
         } else {
