@@ -10,7 +10,7 @@ Short for Robust Auto Click for CraftRise
 you can just download and install rustlang run the command;
 
 ```
-cargo build --profile production
+cargo build --profile release
 ```
 
 # RAC Admin Usage Example
