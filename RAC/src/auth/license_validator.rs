@@ -6,8 +6,8 @@ use rsa::RsaPublicKey;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
-use std::{env, fs};
 use std::process::Command;
+use std::{env, fs};
 use time::OffsetDateTime;
 
 use crate::logger::logger::{log_error, log_info, log_warn};

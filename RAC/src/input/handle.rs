@@ -20,8 +20,4 @@ impl Handle {
     pub fn set(&mut self, handle: HWND) {
         self.handle = handle;
     }
-
-    pub fn is_null(&self) -> bool {
-        self.handle.is_null()
-    }
 }

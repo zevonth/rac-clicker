@@ -1,21 +1,18 @@
+use crate::input::click_service::{ClickService, ClickServiceConfig};
+use crate::menu::Menu;
+use crate::validation::system_validator::SystemValidator;
 #[cfg(target_os = "windows")]
 #[cfg(not(debug_assertions))]
 use debugoff;
-use crate::auth::license_checker::LicenseChecker;
-use crate::auth::license_validator::LicenseValidator;
-use crate::input::click_service::WindowsClickService;
-use crate::menu::Menu;
-use crate::validation::system_validator::SystemValidator;
 use std::error::Error;
-use std::sync::Arc;
 use std::io;
+use std::sync::Arc;
 use tokio;
 use windows::core::{w, BOOL, PCSTR};
 use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
 use windows::Win32::System::Diagnostics::Debug::{CheckRemoteDebuggerPresent, IsDebuggerPresent};
 use windows::Win32::System::Threading::{CreateMutexW, GetCurrentProcess};
 use windows::Win32::UI::WindowsAndMessaging::FindWindowA;
-use crate::auth::license_keys::{XOR_KEY, PROTECTED_PUBLIC, PROTECTED_ENCRYPTION};
 
 pub mod config;
 pub mod input;
@@ -26,11 +23,11 @@ mod auth;
 
 
 pub struct ClickServiceMenu {
-    click_service: Arc<WindowsClickService>,
+    click_service: Arc<ClickService>,
 }
 
 impl ClickServiceMenu {
-    pub fn new(click_service: Arc<WindowsClickService>) -> Self {
+    pub fn new(click_service: Arc<ClickService>) -> Self {
         Self { click_service }
     }
 }
@@ -146,7 +143,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     match initialize_services() {
         Ok(()) => {
-            let click_service = WindowsClickService::new("craftrise-x64.exe");
+            let click_service = ClickService::new(ClickServiceConfig::default());
             /*
             let license_validator = LicenseValidator::new(Vec::from(XOR_KEY), Vec::from(PROTECTED_PUBLIC), Vec::from(PROTECTED_ENCRYPTION))?;
             let license_checker = LicenseChecker::new(license_validator);
