@@ -1,6 +1,8 @@
 # rac-clicker
 Short for Robust Auto Click for CraftRise
 
+# Discord
+Discord link: https://discord.gg/uZsCCdPyF3
 
 - You can contact with me in discord: **giveitashot_44**
 - Benimle discord üzerinden iletişime geçmek için: **giveitashot_44**
