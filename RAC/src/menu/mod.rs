@@ -1,5 +1,6 @@
 use crate::config::settings::Settings;
 use crate::input::click_service::ClickService;
+use crate::input::click_executor::{ClickExecutor, GameMode};
 use crate::logger::logger::{log_error, log_info};
 use std::io::{self, Read, Write};
 use std::sync::Arc;
@@ -18,17 +19,27 @@ enum ToggleMode {
 
 pub struct Menu {
     click_service: Arc<ClickService>,
+    click_executor: Arc<ClickExecutor>,
     toggle_key: i32,
     toggle_mode: ToggleMode,
 }
 
 impl Menu {
-    pub fn new(click_service: Arc<ClickService>) -> Self {
+    pub fn new(click_service: Arc<ClickService>, mut click_executor: Arc<ClickExecutor>) -> Self {
         let context = "Menu::new";
 
         let settings = match Settings::load() {
             Ok(s) => {
                 log_info("Loaded existing configuration", context);
+
+                if let Ok(mut delay_provider) = click_service.delay_provider.lock() {
+                    if delay_provider.burst_mode != s.burst_mode {
+                        delay_provider.toggle_burst_mode();
+                    }
+                }
+
+                click_executor.set_game_mode(GameMode::Combo);
+
                 s
             },
             Err(_) => {
@@ -37,8 +48,10 @@ impl Menu {
             }
         };
 
+
         let menu = Self {
             click_service,
+            click_executor,
             toggle_key: settings.toggle_key,
             toggle_mode: if settings.keyboard_hold_mode { ToggleMode::KeyboardHold } else { ToggleMode::MouseHold },
         };
@@ -345,8 +358,10 @@ impl Menu {
             println!("Click Delay: {} microseconds", settings.click_delay_micros);
             println!("Delay Range: {}ms - {}ms", settings.delay_range_min, settings.delay_range_max);
             println!("Random Deviation: {} to {} microseconds", settings.random_deviation_min, settings.random_deviation_max);
+            println!("Burst Mode: {}", if settings.burst_mode { "Enabled" } else { "Disabled" });
+            println!("Game Mode (settings): {}", settings.game_mode);
         }
-        
+
         /*
         if let Ok(license_validator) = LicenseValidator::new(Vec::from(XOR_KEY), Vec::from(PROTECTED_PUBLIC), Vec::from(PROTECTED_ENCRYPTION)) {
             println!("Machine ID: {}", license_validator.get_current_machine_id());
@@ -415,7 +430,7 @@ impl Menu {
         let mut system_enabled = false;
         let mut last_key_state = false;
         let mut key_hold_start: Option<Instant> = None;
-        let key_hold_threshold = Duration::from_millis(10); // Short threshold to detect holds quickly
+        let key_hold_threshold = Duration::from_millis(10);
 
         match self.toggle_mode {
             ToggleMode::MouseHold => {
@@ -529,7 +544,7 @@ impl Menu {
             _ => format!("Unknown Key (0x{:02X})", key),
         }
     }
-
+    
     fn configure_advanced_settings(&mut self) {
         let context = "Menu::configure_advanced_settings";
         let mut settings = match Settings::load() {
@@ -542,7 +557,7 @@ impl Menu {
                 return;
             }
         };
-        
+
         loop {
             self.clear_console();
             println!("=== Advanced Settings Configuration ===");
@@ -551,14 +566,16 @@ impl Menu {
             println!("3. Click Delay: {} microseconds", settings.click_delay_micros);
             println!("4. Delay Range: {}ms - {}ms", settings.delay_range_min, settings.delay_range_max);
             println!("5. Random Deviation: {} to {} microseconds", settings.random_deviation_min, settings.random_deviation_max);
-            println!("6. Save and Return to Main Menu");
+            println!("6. Burst Mode: {}", if settings.burst_mode { "Enabled" } else { "Disabled" });
+            println!("7. Save and Return to Main Menu");
             print!("\nSelect option to change: ");
-            
+
+
             if let Err(e) = io::stdout().flush() {
                 log_error(&format!("Failed to flush stdout: {}", e), context);
                 return;
             }
-            
+
             let mut choice = String::new();
             if let Err(e) = io::stdin().read_line(&mut choice) {
                 log_error(&format!("Failed to read user input: {}", e), context);
@@ -708,6 +725,45 @@ impl Menu {
                     settings.random_deviation_max = max_value;
                 }
                 "6" => {
+                    println!("Toggle Burst Mode (currently {})", if settings.burst_mode { "Enabled" } else { "Disabled" });
+                    println!("1. Enable");
+                    println!("2. Disable");
+                    print!("Enter choice: ");
+
+                    if let Err(e) = io::stdout().flush() {
+                        log_error(&format!("Failed to flush stdout: {}", e), context);
+                        continue;
+                    }
+
+                    let mut input = String::new();
+                    if let Err(e) = io::stdin().read_line(&mut input) {
+                        log_error(&format!("Failed to read input: {}", e), context);
+                        continue;
+                    }
+
+                    match input.trim() {
+                        "1" => {
+                            settings.burst_mode = true;
+                            if let Ok(mut delay_provider) = self.click_service.delay_provider.lock() {
+                                delay_provider.toggle_burst_mode();
+                            }
+                        },
+                        "2" => {
+                            settings.burst_mode = false;
+                            if let Ok(mut delay_provider) = self.click_service.delay_provider.lock() {
+                                if delay_provider.burst_mode {
+                                    delay_provider.toggle_burst_mode();
+                                }
+                            }
+                        },
+                        _ => {
+                            println!("Invalid choice. Press Enter to continue...");
+                            let mut _input = String::new();
+                            let _ = io::stdin().read_line(&mut _input);
+                        }
+                    }
+                },
+                "7" => {
                     if let Err(e) = settings.save() {
                         log_error(&format!("Failed to save settings: {}", e), context);
                         println!("\nFailed to save settings. Press Enter to continue...");

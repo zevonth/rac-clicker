@@ -33,10 +33,10 @@ impl Default for ClickServiceConfig {
 
 pub struct ClickService {
     sync_controller: Arc<SyncController>,
-    delay_provider: Arc<Mutex<DelayProvider>>,
+    pub(crate) delay_provider: Arc<Mutex<DelayProvider>>,
     hwnd: Arc<Mutex<Handle>>,
     window_finder: Arc<WindowFinder>,
-    click_executor: Arc<ClickExecutor>,
+    pub(crate) click_executor: Arc<ClickExecutor>,
     thread_controller: Arc<ThreadController>,
     config: ClickServiceConfig,
     settings: Arc<Mutex<Settings>>,

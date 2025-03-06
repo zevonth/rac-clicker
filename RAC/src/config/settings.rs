@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::PathBuf;
 use crate::config::constants::defaults;
+use crate::input::click_executor::GameMode;
 
 #[derive(Serialize, Deserialize)]
 pub struct Settings {
@@ -15,6 +16,9 @@ pub struct Settings {
     pub random_deviation_min: i32,
     pub random_deviation_max: i32,
     pub keyboard_hold_mode: bool,
+    pub max_cps: u8,
+    pub burst_mode: bool,
+    pub game_mode: String,
 }
 
 impl Settings {
@@ -29,6 +33,9 @@ impl Settings {
             random_deviation_min: defaults::RANDOM_DEVIATION_MIN,
             random_deviation_max: defaults::RANDOM_DEVIATION_MAX,
             keyboard_hold_mode: defaults::KEYBOARD_HOLD_MODE,
+            max_cps: defaults::MAX_CPS,
+            burst_mode: true,
+            game_mode: "Combo".to_string(),
         }
     }
 

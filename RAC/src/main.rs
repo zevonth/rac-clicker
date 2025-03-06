@@ -13,6 +13,7 @@ use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
 use windows::Win32::System::Diagnostics::Debug::{CheckRemoteDebuggerPresent, IsDebuggerPresent};
 use windows::Win32::System::Threading::{CreateMutexW, GetCurrentProcess};
 use windows::Win32::UI::WindowsAndMessaging::FindWindowA;
+use crate::input::click_executor::ClickExecutor;
 
 pub mod config;
 pub mod input;
@@ -21,14 +22,17 @@ pub mod validation;
 mod logger;
 mod auth;
 
-
 pub struct ClickServiceMenu {
     click_service: Arc<ClickService>,
+    click_executor: Arc<ClickExecutor>,
 }
 
 impl ClickServiceMenu {
-    pub fn new(click_service: Arc<ClickService>) -> Self {
-        Self { click_service }
+    pub fn new(click_service: Arc<ClickService>, click_executor: Arc<ClickExecutor>) -> Self {
+        Self {
+            click_service,
+            click_executor,
+        }
     }
 }
 
@@ -38,25 +42,6 @@ fn initialize_services() -> Result<(), String> {
     if !validation_result.is_valid {
         return Err(validation_result.message.unwrap_or_else(|| "Unknown validation error".to_string()));
     }
-
-    /*
-    let license_validator = LicenseValidator::new(Vec::from(XOR_KEY), Vec::from(PROTECTED_PUBLIC), Vec::from(PROTECTED_ENCRYPTION))
-        .map_err(|e| format!("License initialization error: {}", e))?;
-
-    println!("\nYour Machine ID: {}", license_validator.get_current_machine_id());
-    println!("\nPlace your license file in this directory:");
-    println!("{}", license_validator.get_license_dir());
-    println!("\nLicense filename should be: {}.license", license_validator.get_current_machine_id());
-
-    match license_validator.validate_license() {
-        Ok(true) => {
-            println!("\nLicense is valid!");
-            Ok(())
-        },
-        Ok(false) => Err("License is invalid or expired!".to_string()),
-        Err(e) => Err(format!("License validation error: {}", e)),
-    }
-    */
 
     Ok(())
 }
@@ -143,14 +128,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     match initialize_services() {
         Ok(()) => {
-            let click_service = ClickService::new(ClickServiceConfig::default());
-            /*
-            let license_validator = LicenseValidator::new(Vec::from(XOR_KEY), Vec::from(PROTECTED_PUBLIC), Vec::from(PROTECTED_ENCRYPTION))?;
-            let license_checker = LicenseChecker::new(license_validator);
-
-            license_checker.start_checking().await;
-            */
-            let mut menu = Menu::new(click_service);
+            let click_service = Arc::new(ClickService::new(ClickServiceConfig::default()));
+            let click_executor = Arc::clone(&click_service.click_executor);
+            let mut menu = Menu::new(Arc::clone(&click_service), click_executor);
             menu.show_main_menu();
         }
         Err(error_message) => {
