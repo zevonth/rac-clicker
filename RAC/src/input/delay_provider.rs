@@ -92,7 +92,7 @@ impl DelayProvider {
 
         if self.burst_mode && self.burst_counter < 1 {
             self.burst_counter += 1;
-            return Duration::from_micros(rng.random_range(58000..62000));
+            return Duration::from_micros(rng.random_range(56000..57000));
         } else if self.burst_mode {
             self.burst_counter = 0;
         }
@@ -108,8 +108,8 @@ impl DelayProvider {
             base_delay.saturating_add(Duration::from_micros(micro_adjust as u64))
         };
 
-        if final_delay < Duration::from_micros(45000) {
-            return Duration::from_micros(45000);
+        if final_delay < Duration::from_micros(55000) {
+            return Duration::from_micros(55000);
         }
 
         final_delay

@@ -9,5 +9,4 @@ pub mod defaults {
     pub const RANDOM_DEVIATION_MAX: i32 = 50;
     pub const KEYBOARD_HOLD_MODE: bool = false;
     pub const MAX_CPS: u8 = 16;
-    pub const MIN_DELAY_FOR_DEFAULT_CPS: u64 = 62500;
 }

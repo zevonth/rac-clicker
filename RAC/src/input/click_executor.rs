@@ -14,9 +14,8 @@ use winapi::um::winuser::{MK_LBUTTON};
 #[derive(Debug, Clone)]
 pub enum GameMode {
     Combo,
-    Default,
+    Default
 }
-
 pub struct ClickExecutor {
     thread_controller: ThreadController,
     click_delay_micros: u64,
@@ -79,12 +78,12 @@ impl ClickExecutor {
 
                 PostMessageA(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, 0);
 
-                let down_time = rng.random_range(7000..10000);
+                let down_time = rng.random_range(5000..6000);
                 self.thread_controller.smart_sleep(Duration::from_micros(down_time));
 
                 PostMessageA(hwnd, WM_LBUTTONUP, 0, 0);
 
-                let post_click_pause = rng.random_range(900..1500);
+                let post_click_pause = rng.random_range(200..1000);
                 self.thread_controller.smart_sleep(Duration::from_micros(post_click_pause));
 
                 let base_delay = self.get_mode_specific_delay(&mut rng);
@@ -101,7 +100,6 @@ impl ClickExecutor {
 
         true
     }
-
     fn get_mode_specific_delay(&self, rng: &mut impl Rng) -> Duration {
         let base_delay = self.click_delay_micros;
 
@@ -113,9 +111,9 @@ impl ClickExecutor {
                 base_delay.saturating_add_signed(jitter)
             },
             GameMode::Combo => {
-                let jitter = rng.random_range(-3000..500);
+                let jitter = rng.random_range(-1000..5000); // 7000 30000
                 base_delay.saturating_add_signed(jitter)
-            },
+            }
         };
 
         let min_cps_delay = 1_000_000 / self.max_cps as u64;

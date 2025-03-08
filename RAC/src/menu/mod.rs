@@ -10,6 +10,8 @@ use windows::core::PCSTR;
 use windows::Win32::System::Console::SetConsoleTitleA;
 use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowTextA};
+use crossterm::event::{self, Event, KeyCode, KeyEvent};
+use crossterm::terminal::{enable_raw_mode, disable_raw_mode};
 
 #[derive(Clone, Copy, PartialEq)]
 enum ToggleMode {
@@ -258,46 +260,64 @@ impl Menu {
             return;
         }
 
-        let mut input = [0u8; 1];
-        if let Err(e) = io::stdin().read_exact(&mut input) {
-            log_error(&format!("Failed to read keyboard input: {}", e), context);
+        if let Err(e) = enable_raw_mode() {
+            log_error(&format!("Failed to enable raw mode: {}", e), context);
             return;
         }
 
-        let key = input[0];
-        let virtual_key = match key as char {
-            'a'..='z' => key.to_ascii_uppercase() as i32,
-            'A'..='Z' => key as i32,
-            _ => {
-                println!("\nInvalid key! Please press a letter key (A-Z)...");
-                return;
-            }
-        };
+        let start_time = Instant::now();
+        let timeout = Duration::from_secs(30);
+        let mut input_received = false;
 
-        self.toggle_key = virtual_key;
-        let settings = match Settings::load() {
-            Ok(mut s) => {
-                s.toggle_key = self.toggle_key;
-                s
-            },
-            Err(_) => Settings::default_with_toggle_key(self.toggle_key),
-        };
-        if let Err(e) = settings.save() {
-            log_error(&format!("Failed to save settings: {}", e), context);
-        } else {
-            println!("\nHotkey successfully set to: {}", Self::get_key_name(virtual_key));
-            println!("To change the hotkey, return to the main menu and configure again.");
-            println!("\nPress Enter to continue...");
+        while start_time.elapsed() < timeout && !input_received {
+            if event::poll(Duration::from_millis(100)).unwrap_or(false) {
+                if let Ok(Event::Key(KeyEvent { code, .. })) = event::read() {
+                    if let KeyCode::Char(c) = code {
+                        if c.is_ascii_alphabetic() {
+                            let virtual_key = c.to_ascii_uppercase() as i32;
 
-            let mut _input = String::new();
-            if let Err(e) = io::stdin().read_line(&mut _input) {
-                log_error(&format!("Failed to read continue prompt: {}", e), context);
+                            self.toggle_key = virtual_key;
+                            let settings = match Settings::load() {
+                                Ok(mut s) => {
+                                    s.toggle_key = self.toggle_key;
+                                    s
+                                },
+                                Err(_) => Settings::default_with_toggle_key(self.toggle_key),
+                            };
+
+                            if let Err(e) = settings.save() {
+                                log_error(&format!("Failed to save settings: {}", e), context);
+                            } else {
+                                println!("\nHotkey successfully set to: {}", Self::get_key_name(virtual_key));
+                                println!("To change the hotkey, return to the main menu and configure again.");
+                            }
+                            input_received = true;
+                        } else {
+                            println!("\nInvalid key! Please press a letter key (A-Z)...");
+                            thread::sleep(Duration::from_secs(2));
+                            disable_raw_mode().unwrap_or(());
+                            return;
+                        }
+                    }
+                }
             }
         }
+
+        let _ = disable_raw_mode();
+
+        if !input_received {
+            println!("\nTimeout reached! No key was pressed within {} seconds.", timeout.as_secs());
+        }
+
+        println!("Press Enter to continue...");
+        let mut _input = String::new();
+        let _ = io::stdin().read_line(&mut _input);
     }
 
     fn configure_mouse_hotkey(&mut self) {
         let context = "Menu::configure_mouse_hotkey";
+        self.clear_console();
+        println!("=== Mouse Hotkey Configuration ===");
         println!("\nPress any mouse button to set as hotkey...");
 
         if let Err(e) = io::stdout().flush() {
@@ -306,17 +326,36 @@ impl Menu {
         }
 
         let mut mouse_key = 0;
-        while mouse_key == 0 {
-            for key in 1..=12 {
+        let button_codes = [
+            0x01, 0x02, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C,
+            0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7,
+            0xA8, 0xA9, 0xAA, 0xAB,
+            0xAD, 0xAE, 0xAF, 0xB0, 0xB1, 0xB2, 0xB3
+        ];
+
+        let start_time = Instant::now();
+        let timeout = Duration::from_secs(30);
+
+        'detection: while mouse_key == 0 && start_time.elapsed() < timeout {
+            for &key in &button_codes {
                 unsafe {
                     let state = GetAsyncKeyState(key);
                     if (state as u16 & 0x8000) != 0 {
                         mouse_key = key;
-                        break;
+                        thread::sleep(Duration::from_millis(100));
+                        break 'detection;
                     }
                 }
             }
             thread::sleep(Duration::from_millis(10));
+        }
+
+        if mouse_key == 0 {
+            println!("\nTimeout reached! No button was pressed within {} seconds.", timeout.as_secs());
+            println!("\nPress Enter to continue...");
+            let mut _input = String::new();
+            let _ = io::stdin().read_line(&mut _input);
+            return;
         }
 
         self.toggle_key = mouse_key;
@@ -327,10 +366,12 @@ impl Menu {
             },
             Err(_) => Settings::default_with_toggle_key(self.toggle_key),
         };
+
         if let Err(e) = settings.save() {
             log_error(&format!("Failed to save settings: {}", e), context);
         } else {
-            println!("\nHotkey successfully set to: {}", Self::get_key_name(mouse_key));
+            println!("\nHotkey successfully set to: {} (code: 0x{:02X})",
+                     Self::get_key_name(mouse_key), mouse_key);
             println!("To change the hotkey, return to the main menu and configure again.");
             println!("\nPress Enter to continue...");
 
@@ -524,27 +565,6 @@ impl Menu {
         }
     }
 
-    fn get_key_name(key: i32) -> String {
-        match key {
-            0x01 => "Left Mouse Button".to_string(),
-            0x02 => "Right Mouse Button".to_string(),
-            0x04 => "Middle Mouse Button".to_string(),
-            0x05 => "X1 Mouse Button".to_string(),
-            0x06 => "X2 Mouse Button".to_string(),
-
-            0x07 => "Mouse Button 7".to_string(),
-            0x08 => "Mouse Button 8".to_string(),
-            0x09 => "Mouse Button 9".to_string(),
-            0x0A => "Mouse Button 10".to_string(),
-            0x0B => "Mouse Button 11".to_string(),
-            0x0C => "Mouse Button 12".to_string(),
-
-            0x41..=0x5A => format!("Key {}", key as u8 as char),
-
-            _ => format!("Unknown Key (0x{:02X})", key),
-        }
-    }
-    
     fn configure_advanced_settings(&mut self) {
         let context = "Menu::configure_advanced_settings";
         let mut settings = match Settings::load() {
@@ -782,6 +802,26 @@ impl Menu {
                     let _ = io::stdin().read_line(&mut _input);
                 }
             }
+        }
+    }
+
+    fn get_key_name(key: i32) -> String {
+        match key {
+            0x01 => "Left Mouse Button".to_string(),
+            0x02 => "Right Mouse Button".to_string(),
+            0x04 => "Middle Mouse Button".to_string(),
+            0x05 => "X1 Mouse Button".to_string(),
+            0x06 => "X2 Mouse Button".to_string(),
+            0x07 => "Mouse Button 7".to_string(),
+            0x08 => "Mouse Button 8".to_string(),
+            0x09 => "Mouse Button 9".to_string(),
+            0x0A => "Mouse Button 10".to_string(),
+            0x0B => "Mouse Button 11".to_string(),
+            0x0C => "Mouse Button 12".to_string(),
+
+            0xA0..=0xB3 => format!("Special Button (0x{:02X})", key),
+            0x41..=0x5A => format!("Key {}", key as u8 as char),
+            _ => format!("Button Code 0x{:02X}", key),
         }
     }
 }

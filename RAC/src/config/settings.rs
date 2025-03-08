@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::PathBuf;
 use crate::config::constants::defaults;
-use crate::input::click_executor::GameMode;
 
 #[derive(Serialize, Deserialize)]
 pub struct Settings {
