@@ -45,7 +45,6 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> i
     1
 }
 
-
 pub struct WindowFinder {
     target_process: String,
     system: Arc<Mutex<System>>,
@@ -65,9 +64,11 @@ impl WindowFinder {
 
     pub fn set_require_visibility(&mut self, require: bool) {
         self.require_visibility = require;
+
         log_info(&format!("Window visibility requirement set to: {}", require),
                  "WindowFinder::set_require_visibility");
     }
+
 
     pub fn update_target_process(&self, new_target_process: &str) -> bool {
         let context = "WindowFinder::update_target_process";
@@ -135,6 +136,7 @@ impl WindowFinder {
 
     fn find_window_for_pid(&self, pid: DWORD) -> Option<HWND> {
         let context = "WindowFinder::find_window_for_pid";
+
         log_info(&format!("Looking for {} windows for process PID: {}",
                           if self.require_visibility { "visible" } else { "any" }, pid), context);
 

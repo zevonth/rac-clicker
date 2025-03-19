@@ -1,4 +1,4 @@
-use crate::input::click_executor::ClickExecutor;
+use crate::input::click_executor::{ClickExecutor, MouseButton, GameMode};
 use crate::input::delay_provider::DelayProvider;
 use crate::input::handle::Handle;
 use crate::input::sync_controller::SyncController;
@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::sync::atomic::{AtomicBool, Ordering};
+use winapi::um::winuser::GetAsyncKeyState;
 
 pub struct ClickServiceConfig {
     pub target_process: String,
@@ -37,31 +38,69 @@ pub struct ClickService {
     hwnd: Arc<Mutex<Handle>>,
     window_finder: Arc<WindowFinder>,
     pub(crate) click_executor: Arc<ClickExecutor>,
-    thread_controller: Arc<ThreadController>,
     config: ClickServiceConfig,
     settings: Arc<Mutex<Settings>>,
     window_finder_running: Arc<AtomicBool>,
+    left_click_enabled: Arc<AtomicBool>,
+    right_click_enabled: Arc<AtomicBool>,
+    left_click_controller: Arc<SyncController>,
+    right_click_controller: Arc<SyncController>,
+    left_delay_provider: Arc<Mutex<DelayProvider>>,
+    right_delay_provider: Arc<Mutex<DelayProvider>>,
+    left_thread_controller: Arc<ThreadController>,
+    right_thread_controller: Arc<ThreadController>,
+    pub(crate) left_click_executor: Arc<ClickExecutor>,
+    pub(crate) right_click_executor: Arc<ClickExecutor>,
 }
 
 impl ClickService {
     pub fn new(config: ClickServiceConfig) -> Arc<Self> {
         let context = "ClickService::new";
-
         let settings = Settings::load().unwrap_or_else(|_| Settings::default());
+        let settings_clone = settings.clone();
+        let adaptive_cpu_mode = config.adaptive_cpu_mode;
 
-        let thread_controller = Arc::new(ThreadController::new(config.adaptive_cpu_mode));
+        let left_thread_controller = Arc::new(ThreadController::new(adaptive_cpu_mode));
+        let right_thread_controller = Arc::new(ThreadController::new(adaptive_cpu_mode));
 
         let service = Arc::new(Self {
             sync_controller: Arc::new(SyncController::new()),
             delay_provider: Arc::new(Mutex::new(DelayProvider::new())),
             hwnd: Arc::new(Mutex::new(Handle::new())),
             window_finder: Arc::new(WindowFinder::new(&config.target_process)),
-            click_executor: Arc::new(ClickExecutor::new((*thread_controller).clone())),
-            thread_controller,
+            click_executor: Arc::new(ClickExecutor::new((*left_thread_controller).clone())),
             config,
             settings: Arc::new(Mutex::new(settings)),
             window_finder_running: Arc::new(AtomicBool::new(true)),
+            left_click_enabled: Arc::new(AtomicBool::new(false)),
+            right_click_enabled: Arc::new(AtomicBool::new(false)),
+            left_click_controller: Arc::new(SyncController::new()),
+            right_click_controller: Arc::new(SyncController::new()),
+            left_delay_provider: Arc::new(Mutex::new(DelayProvider::new())),
+            right_delay_provider: Arc::new(Mutex::new(DelayProvider::new())),
+            left_thread_controller: left_thread_controller.clone(),
+            right_thread_controller: right_thread_controller.clone(),
+            left_click_executor: Arc::new(ClickExecutor::new((*left_thread_controller).clone())),
+            right_click_executor: Arc::new(ClickExecutor::new((*right_thread_controller).clone())),
         });
+
+        let left_click_executor = Arc::clone(&service.left_click_executor);
+        left_click_executor.set_max_cps(settings_clone.left_max_cps);
+        left_click_executor.set_mouse_button(MouseButton::Left);
+        let left_mode = match settings_clone.left_game_mode.as_str() {
+            "Combo" => GameMode::Combo,
+            _ => GameMode::Default,
+        };
+        left_click_executor.set_game_mode(left_mode);
+
+        let right_click_executor = Arc::clone(&service.right_click_executor);
+        right_click_executor.set_max_cps(settings_clone.right_max_cps);
+        right_click_executor.set_mouse_button(MouseButton::Right);
+        let right_mode = match settings_clone.right_game_mode.as_str() {
+            "Combo" => GameMode::Combo,
+            _ => GameMode::Default,
+        };
+        right_click_executor.set_game_mode(right_mode);
 
         let service_clone = service.clone();
         match thread::Builder::new()
@@ -92,18 +131,10 @@ impl ClickService {
         }
 
         let service_clone = service.clone();
-        match thread::Builder::new()
-            .name("ClickThread".to_string())
-            .spawn(move || {
-                service_clone.click_loop();
-            }) {
-            Ok(_) => {
-                log_info("Click thread spawned successfully", context);
-            }
-            Err(e) => {
-                log_error(&format!("Failed to spawn click thread: {}", e), context);
-            }
-        }
+        spawn_click_thread("LeftClickThread", service_clone.clone(), MouseButton::Left);
+        
+        let service_clone = service.clone();
+        spawn_click_thread("RightClickThread", service_clone.clone(), MouseButton::Right);
 
         service
     }
@@ -112,7 +143,7 @@ impl ClickService {
         let context = "ClickService::window_finder_loop";
         log_info("Window finder thread started", context);
 
-        self.thread_controller.set_idle_priority();
+        self.left_thread_controller.set_idle_priority();
 
         while !thread::panicking() && self.window_finder_running.load(Ordering::SeqCst) {
             let check_interval = if self.is_enabled() {
@@ -133,7 +164,7 @@ impl ClickService {
         let context = "ClickService::settings_sync_loop";
         log_info("Settings synchronization thread started", context);
 
-        self.thread_controller.set_idle_priority();
+        self.left_thread_controller.set_idle_priority();
 
         while !thread::panicking() {
             self.check_and_update_settings();
@@ -191,7 +222,7 @@ impl ClickService {
                 
                 if adaptive_cpu_mode_changed {
                     log_info(&format!("Adaptive CPU mode updated to: {}", if adaptive_cpu_mode { "disabled" } else { "enabled" }), context);
-                    self.thread_controller.set_adaptive_mode(!adaptive_cpu_mode);
+                    self.left_thread_controller.set_adaptive_mode(!adaptive_cpu_mode);
                 }
                 
                 if click_delay_changed || delay_range_changed || deviation_changed {
@@ -219,30 +250,75 @@ impl ClickService {
         }
     }
 
-    fn click_loop(&self) {
-        let context = "ClickService::click_loop";
-        let mut last_click = Instant::now();
-        let mut consecutive_failures = 0;
-        let mut was_previously_disabled = true;
+    pub fn click_loop(&self, button: MouseButton) {
+        let context = match button {
+            MouseButton::Left => "ClickService::left_click_loop",
+            MouseButton::Right => "ClickService::right_click_loop",
+        };
 
-        self.thread_controller.set_active_priority();
+        log_info(&format!("{} thread started", context), context);
+
+        let click_controller = match button {
+            MouseButton::Left => Arc::clone(&self.left_click_controller),
+            MouseButton::Right => Arc::clone(&self.right_click_controller),
+        };
+
+        let delay_provider = match button {
+            MouseButton::Left => Arc::clone(&self.left_delay_provider),
+            MouseButton::Right => Arc::clone(&self.right_delay_provider),
+        };
+
+        let thread_controller = match button {
+            MouseButton::Left => Arc::clone(&self.left_thread_controller),
+            MouseButton::Right => Arc::clone(&self.right_thread_controller),
+        };
+
+        let click_executor = match button {
+            MouseButton::Left => Arc::clone(&self.left_click_executor),
+            MouseButton::Right => Arc::clone(&self.right_click_executor),
+        };
+
+        thread_controller.set_active_priority();
+        thread_controller.set_adaptive_mode(!self.config.adaptive_cpu_mode);
+
+        let mut consecutive_failures = 0;
+        let mut last_click = Instant::now();
+
+        let settings = Settings::load().unwrap_or_default();
+        match button {
+            MouseButton::Left => {
+                click_executor.set_max_cps(settings.left_max_cps);
+                let mode = match settings.left_game_mode.as_str() {
+                    "Combo" => GameMode::Combo,
+                    _ => GameMode::Default,
+                };
+                click_executor.set_game_mode(mode);
+            },
+            MouseButton::Right => {
+                click_executor.set_max_cps(settings.right_max_cps);
+                let mode = match settings.right_game_mode.as_str() {
+                    "Combo" => GameMode::Combo,
+                    _ => GameMode::Default,
+                };
+                click_executor.set_game_mode(mode);
+            }
+        }
 
         while !thread::panicking() {
-            let is_enabled = self.sync_controller.wait_for_signal(Duration::from_millis(100));
-
-            if is_enabled && was_previously_disabled {
-                last_click = Instant::now();
-                was_previously_disabled = false;
-            } else if !is_enabled {
-                was_previously_disabled = true;
+            if !click_controller.wait_for_signal(Duration::from_millis(50)) {
+                continue;
             }
 
-            if is_enabled {
-                self.thread_controller.set_active_priority();
-            } else {
-                self.thread_controller.set_normal_priority();
-                self.thread_controller.smart_sleep(Duration::from_millis(50));
-                consecutive_failures = 0;
+            let is_pressed = match button {
+                MouseButton::Left => {
+                    unsafe { GetAsyncKeyState(0x01) < 0 }
+                },
+                MouseButton::Right => {
+                    unsafe { GetAsyncKeyState(0x02) < 0 }
+                }
+            };
+
+            if !is_pressed {
                 continue;
             }
 
@@ -251,33 +327,33 @@ impl ClickService {
                 hwnd_guard.get()
             };
 
-            if self.click_executor.execute_click(hwnd) {
+            if click_executor.execute_click(hwnd) {
                 consecutive_failures = 0;
 
                 let delay = {
-                    let mut delay_provider = self.delay_provider.lock().unwrap();
+                    let mut delay_provider = delay_provider.lock().unwrap();
                     delay_provider.get_next_delay()
                 };
 
                 let elapsed = last_click.elapsed();
                 if elapsed < delay {
-                    self.thread_controller.smart_sleep(delay.saturating_sub(elapsed));
+                    thread_controller.smart_sleep(delay.saturating_sub(elapsed));
                 }
                 last_click = Instant::now();
             } else {
                 consecutive_failures += 1;
 
                 if consecutive_failures >= 3 {
-                    log_info("Multiple click failures detected, continuing with next cycle", context);
+                    log_info("Multiple click failures detected, continuing with next cycle", &context);
                     consecutive_failures = 0;
                 }
 
-                self.thread_controller.smart_sleep(Duration::from_millis(20));
+                thread_controller.smart_sleep(Duration::from_millis(20));
             }
         }
 
         self.window_finder_running.store(false, Ordering::SeqCst);
-        log_error("Click loop terminated due to thread panic", context);
+        log_error("Click loop terminated due to thread panic", &context);
     }
 
     pub fn toggle(&self) -> bool {
@@ -309,5 +385,95 @@ impl ClickService {
         }
 
         true
+    }
+
+    pub fn force_enable_left_clicking(&self) -> bool {
+        if self.left_click_controller.is_enabled() {
+            return true;
+        }
+        log_info("Forcing left click to enable state", "ClickService::force_enable_left_clicking");
+        self.left_click_controller.force_enable()
+    }
+
+    pub fn force_enable_right_clicking(&self) -> bool {
+        if self.right_click_controller.is_enabled() {
+            return true;
+        }
+        log_info("Forcing right click to enable state", "ClickService::force_enable_right_clicking");
+        self.right_click_controller.force_enable()
+    }
+
+    pub fn force_disable_left_clicking(&self) -> bool {
+        if !self.left_click_controller.is_enabled() {
+            return true;
+        }
+        log_info("Forcing left click to disable state", "ClickService::force_disable_left_clicking");
+        self.left_click_controller.toggle()
+    }
+
+    pub fn force_disable_right_clicking(&self) -> bool {
+        if !self.right_click_controller.is_enabled() {
+            return true;
+        }
+        log_info("Forcing right click to disable state", "ClickService::force_disable_right_clicking");
+        self.right_click_controller.toggle()
+    }
+
+    pub fn get_left_click_executor(&self) -> Arc<ClickExecutor> {
+        Arc::clone(&self.left_click_executor)
+    }
+
+    pub fn get_right_click_executor(&self) -> Arc<ClickExecutor> {
+        Arc::clone(&self.right_click_executor)
+    }
+
+    pub fn set_left_click_cps(&self, cps: u8) {
+        self.left_click_executor.set_max_cps(cps);
+    }
+
+    pub fn set_right_click_cps(&self, cps: u8) {
+        self.right_click_executor.set_max_cps(cps);
+    }
+
+    pub fn start(&self) {
+        let context = "ClickService::start";
+        log_info("Starting click service", context);
+
+        self.left_click_executor.set_active(true);
+        self.right_click_executor.set_active(true);
+
+        log_info(
+            &format!(
+                "Click service started with LEFT CPS={}, RIGHT CPS={}", 
+                self.left_click_executor.get_current_max_cps(),
+                self.right_click_executor.get_current_max_cps()
+            ), 
+            context
+        );
+    }
+    
+    pub fn stop(&self) {
+        let context = "ClickService::stop";
+        log_info("Stopping click service", context);
+
+        self.left_click_executor.set_active(false);
+        self.right_click_executor.set_active(false);
+    }
+}
+
+fn spawn_click_thread(name: &str, service: Arc<ClickService>, button: MouseButton) {
+    let context = format!("ClickService::{}", name);
+    
+    match thread::Builder::new()
+        .name(name.to_string())
+        .spawn(move || {
+            service.click_loop(button);
+        }) {
+        Ok(_) => {
+            log_info(&format!("{} spawned successfully", name), &context);
+        }
+        Err(e) => {
+            log_error(&format!("Failed to spawn {}: {}", name, e), &context);
+        }
     }
 }

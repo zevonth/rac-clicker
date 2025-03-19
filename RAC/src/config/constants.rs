@@ -8,5 +8,6 @@ pub mod defaults {
     pub const RANDOM_DEVIATION_MIN: i32 = -50;
     pub const RANDOM_DEVIATION_MAX: i32 = 50;
     pub const KEYBOARD_HOLD_MODE: bool = false;
-    pub const MAX_CPS: u8 = 16;
+    pub const LEFT_MAX_CPS: u8 = 15;
+    pub const RIGHT_MAX_CPS: u8 = 18;
 }

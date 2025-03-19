@@ -81,7 +81,7 @@ impl DelayProvider {
     fn initialize_delay_buffer(&mut self) -> Result<(), String> {
         let mut rng = rand::rng();
         for delay in self.delay_buffer.iter_mut() {
-            let ms = rng.random_range(self.delay_range_min..=self.delay_range_max);
+            let ms = rng.random_range(2.0..=5.0);
             *delay = Duration::from_micros((ms * 1000.0) as u64);
         }
         Ok(())
@@ -92,7 +92,7 @@ impl DelayProvider {
 
         if self.burst_mode && self.burst_counter < 1 {
             self.burst_counter += 1;
-            return Duration::from_micros(rng.random_range(56000..57000));
+            return Duration::from_micros(rng.random_range(3000..4000));
         } else if self.burst_mode {
             self.burst_counter = 0;
         }
@@ -100,7 +100,7 @@ impl DelayProvider {
         let base_delay = self.delay_buffer[self.current_index];
         self.current_index = (self.current_index + 1) & 511;
 
-        let micro_adjust: i32 = rng.random_range(-500..500);
+        let micro_adjust: i32 = rng.random_range(-50..50);
 
         let final_delay = if micro_adjust < 0 {
             base_delay.saturating_sub(Duration::from_micros(-micro_adjust as u64))
@@ -108,8 +108,8 @@ impl DelayProvider {
             base_delay.saturating_add(Duration::from_micros(micro_adjust as u64))
         };
 
-        if final_delay < Duration::from_micros(55000) {
-            return Duration::from_micros(55000);
+        if final_delay < Duration::from_micros(200) {
+            return Duration::from_micros(200);
         }
 
         final_delay

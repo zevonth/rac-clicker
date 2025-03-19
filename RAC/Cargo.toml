@@ -1,6 +1,6 @@
 [package]
 name = "RAC"
-version = "0.0.1"
+version = "0.0.4"
 authors = ["RAC"]
 edition = "2021"
 description = "Short for Robust Auto Click for CraftRise, Made By LuaCodder"

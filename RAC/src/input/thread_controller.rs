@@ -2,6 +2,8 @@ use crate::logger::logger::log_error;
 use std::time::Duration;
 use windows::Win32::System::Threading::{GetCurrentThread, SetThreadPriority};
 use windows::Win32::System::Threading::{THREAD_PRIORITY_BELOW_NORMAL, THREAD_PRIORITY_NORMAL, THREAD_PRIORITY_TIME_CRITICAL};
+use std::time::Instant;
+use std::thread;
 
 pub struct ThreadController {
     adaptive_mode: bool,
@@ -61,21 +63,16 @@ impl ThreadController {
     }
 
     pub fn smart_sleep(&self, duration: Duration) {
-        if self.adaptive_mode && duration > Duration::from_millis(5) {
-            let chunk_size = Duration::from_millis(2);
-            let mut remaining = duration;
-
-            while remaining > chunk_size {
-                std::thread::sleep(chunk_size);
-                remaining -= chunk_size;
-                std::thread::yield_now();
-            }
-
-            if remaining > Duration::ZERO {
-                std::thread::sleep(remaining);
-            }
-        } else {
-            std::thread::sleep(duration);
+        if duration.as_micros() < 1 {
+            return;
         }
+
+        if duration.as_micros() < 1000 {
+            let start = Instant::now();
+            while start.elapsed() < duration {}
+            return;
+        }
+
+        thread::sleep(duration);
     }
 }
